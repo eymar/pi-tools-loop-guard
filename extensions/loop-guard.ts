@@ -111,6 +111,9 @@ export default function (pi: ExtensionAPI) {
   // ── Call key derivation ──────────────────────────────────────────────────
 
   function callKey(toolName: string, input: unknown): string {
+    if (!input || typeof input !== "object") {
+      return `${toolName}::${JSON.stringify(input)}`;
+    }
     const args = input as Record<string, unknown>;
     const sortedKeys = Object.keys(args).sort();
     const ordered: Record<string, unknown> = {};
