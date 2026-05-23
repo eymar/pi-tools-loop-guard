@@ -38,7 +38,9 @@ export default function (pi: ExtensionAPI) {
       if (entry.type === "custom" && entry.customType === CUSTOM_ENTRY_TYPE) {
         const data = entry.data as LoopGuardConfig | undefined;
         if (data) {
-          config = data;
+          // Merge: persisted values first, then new defaults on top.
+          // This ensures code-level default changes (e.g. watch→block) take effect.
+          config = { ...data, ...createDefaultConfig() };
           ctx.ui.notify(
             `LoopGuard restored: ${config.disabled ? "disabled" : config.mode}`,
             "info",
@@ -116,13 +118,13 @@ export default function (pi: ExtensionAPI) {
 
       // After first block, inject a steering message so the LLM stops retrying.
       if (!turnState.steeringInjected) {
-        turnState.steeringInjected = true;
+        // turnState.steeringInjected = true;
         pi.sendMessage({
           customType: "loopguard-steering",
           content: `Important: LoopGuard has blocked repeated tool calls. ` +
             `Do NOT retry the same tool with the same arguments — it will be blocked again. ` +
             `Use the results you already have from prior calls, or try a different approach.`,
-          display: false,
+          display: true,
         });
       }
 
