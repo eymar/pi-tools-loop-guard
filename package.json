@@ -1,0 +1,14 @@
+{
+  "name": "pi-loop-guard",
+  "version": "1.0.0",
+  "description": "Detects and blocks repetitive tool calls within a single turn",
+  "keywords": ["pi-package"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/pi-loop-guard.git"
+  },
+  "license": "MIT",
+  "pi": {
+    "extensions": ["./extensions"]
+  }
+}
