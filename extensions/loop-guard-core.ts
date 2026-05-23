@@ -60,15 +60,32 @@ export function createDefaultConfig(): LoopGuardConfig {
 }
 
 /**
+ * Fields injected by Pi's tool framework that should be ignored for loop detection.
+ */
+const VOLATILE_KEYS = new Set([
+  "timeout",
+  "toolCallId",
+  "callId",
+  "id",
+  "_id",
+  "requestId",
+  "traceId",
+  "spanId",
+]);
+
+/**
  * Derive a deterministic key for a tool call.
  * Sorted keys ensure `read({path:"a"})` === `read({path:"a"})` regardless of arg order.
+ * Volatile metadata fields (timeout, toolCallId, etc.) are stripped.
  */
 export function callKey(toolName: string, input: unknown): string {
   if (!input || typeof input !== "object") {
     return `${toolName}::${JSON.stringify(input)}`;
   }
   const args = input as Record<string, unknown>;
-  const sortedKeys = Object.keys(args).sort();
+  const sortedKeys = Object.keys(args)
+    .filter((k) => !VOLATILE_KEYS.has(k))
+    .sort();
   const ordered: Record<string, unknown> = {};
   for (const k of sortedKeys) ordered[k] = args[k];
   return `${toolName}::${JSON.stringify(ordered)}`;

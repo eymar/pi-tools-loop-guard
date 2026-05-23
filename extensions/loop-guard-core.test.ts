@@ -55,6 +55,19 @@ describe("callKey", () => {
       'bash::"just-a-string"',
     );
   });
+
+  it("strips volatile metadata fields (timeout, toolCallId, etc.)", () => {
+    const a = { command: "ls", timeout: 30, toolCallId: "abc-123" };
+    const b = { command: "ls", timeout: 60, toolCallId: "xyz-789" };
+    expect(callKey("bash", a)).toBe(callKey("bash", b));
+    expect(callKey("bash", a)).toBe('bash::{"command":"ls"}');
+  });
+
+  it("strips volatile fields from read calls", () => {
+    const a = { path: "file.ts", timeout: 10 };
+    const b = { path: "file.ts", timeout: 20 };
+    expect(callKey("read", a)).toBe(callKey("read", b));
+  });
 });
 
 // ── recordCall ────────────────────────────────────────────────────────────────
