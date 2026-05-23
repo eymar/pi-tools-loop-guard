@@ -310,3 +310,63 @@ describe("STATE_MODIFYING_TOOLS", () => {
     expect(STATE_MODIFYING_TOOLS.has("read")).toBe(false);
   });
 });
+
+// ── Regression: counting must happen in tool_call, not tool_execution_end ────
+// Pi's tool_execution_end event has { toolName, result, isError } — NO input.
+// Pi's tool_call event has { toolName, input } — typed args are available.
+// Counting in tool_execution_end always produced "toolName::undefined".
+
+describe("regression: counting in wrong hook produces undefined keys", () => {
+  it("tool_call input shape produces proper keys", () => {
+    // Simulates tool_call event input
+    const input = { command: "ls" };
+    const key = callKey("bash", input);
+    expect(key).toBe('bash::{"command":"ls"}');
+    expect(key).not.toContain("undefined");
+  });
+
+  it("tool_execution_end input shape (undefined) produces useless keys", () => {
+    // Simulates tool_execution_end event — input is undefined
+    const key = callKey("bash", undefined);
+    expect(key).toBe("bash::undefined");
+    // Every call gets the same key regardless of actual args → no loop detection
+  });
+
+  it("two identical calls produce same key via tool_call", () => {
+    const a: ToolCallEvent = { toolName: "bash", input: { command: "ls" } };
+    const b: ToolCallEvent = { toolName: "bash", input: { command: "ls" } };
+    expect(callKey(a.toolName, a.input)).toBe(callKey(b.toolName, b.input));
+  });
+
+  it("two different calls would collide via tool_execution_end (bug)", () => {
+    // Both produce "bash::undefined" — indistinguishable
+    const key1 = callKey("bash", undefined);
+    const key2 = callKey("bash", undefined);
+    expect(key1).toBe(key2); // collision — this is the bug
+    expect(key1).toBe("bash::undefined");
+  });
+
+  it("full workflow: recordCall + evaluateCall works with real input", () => {
+    const config = createDefaultConfig();
+    config.mode = "block";
+    const state = createFreshTurnState();
+    const event: ToolCallEvent = {
+      toolName: "fetch_content",
+      input: { url: "https://example.com" },
+    };
+
+    // Call 1: no action, recorded
+    expect(evaluateCall(config, state, event)).toBeUndefined();
+    recordCall(state, event);
+
+    // Call 2: nudge at threshold-1 (fetch_content threshold = 2)
+    const nudge = evaluateCall(config, state, event);
+    expect(nudge?.nudge).toBe(true);
+    recordCall(state, event);
+
+    // Call 3: block at threshold
+    const block = evaluateCall(config, state, event);
+    expect(block?.block).toBe(true);
+  });
+});
+
