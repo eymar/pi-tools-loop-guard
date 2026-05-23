@@ -73,7 +73,7 @@ describe("callKey", () => {
 // ── recordCall ────────────────────────────────────────────────────────────────
 
 describe("recordCall", () => {
-  it("increments count for repeated calls", () => {
+  it("increments count for consecutive identical calls", () => {
     const state = createFreshTurnState();
     const event: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
 
@@ -82,30 +82,34 @@ describe("recordCall", () => {
     expect(recordCall(state, event)).toBe(3);
   });
 
-  it("tracks different calls independently", () => {
+  it("resets counter when a different key appears", () => {
     const state = createFreshTurnState();
     const a: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
     const b: ToolCallEvent = { toolName: "read", input: { path: "b.ts" } };
 
     recordCall(state, a);
     recordCall(state, a);
-    recordCall(state, b);
-
     expect(state.callHistory.get(callKey("read", a.input))).toBe(2);
+
+    // Different key → reset
+    recordCall(state, b);
     expect(state.callHistory.get(callKey("read", b.input))).toBe(1);
+    expect(state.callHistory.has(callKey("read", a.input))).toBe(false);
   });
 
-  it("counts different tools separately", () => {
+  it("resets counter when a different tool is called", () => {
     const state = createFreshTurnState();
     const read: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
     const bash: ToolCallEvent = { toolName: "bash", input: { command: "ls" } };
 
     recordCall(state, read);
-    recordCall(state, bash);
     recordCall(state, read);
-
     expect(state.callHistory.get(callKey("read", read.input))).toBe(2);
+
+    // Different tool → reset
+    recordCall(state, bash);
     expect(state.callHistory.get(callKey("bash", bash.input))).toBe(1);
+    expect(state.callHistory.has(callKey("read", read.input))).toBe(false);
   });
 });
 
@@ -279,13 +283,15 @@ describe("countRepeats", () => {
     expect(countRepeats(state)).toBe(0);
   });
 
-  it("counts unique keys with count > 1", () => {
+  it("counts unique keys with count > 1 (consecutive only)", () => {
     const state = createFreshTurnState();
+    // With consecutive-repeat logic, only the last key's count persists.
+    // Different keys reset the counter, so only bash has count > 1.
     recordCall(state, { toolName: "read", input: { path: "a.ts" } });
     recordCall(state, { toolName: "read", input: { path: "a.ts" } });
     recordCall(state, { toolName: "bash", input: { command: "ls" } });
     recordCall(state, { toolName: "bash", input: { command: "ls" } });
-    expect(countRepeats(state)).toBe(2);
+    expect(countRepeats(state)).toBe(1); // only bash has count > 1
   });
 });
 
