@@ -53,6 +53,11 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 4. At `threshold` (block mode): call is blocked with reason injected into context
 5. After `write`/`edit`: read counters for that file are cleared
 
+## Known Limitations
+
+- **Subagent tool calls are not tracked** — subagents run in separate processes with isolated extension hooks. LoopGuard only tracks the main agent's direct tool calls.
+- **Exact-match only** — `read({path: "a.ts", offset: 1})` and `read({path: "a.ts", offset: 2})` are counted separately.
+
 ## v2 Roadmap
 
 - Cross-turn detection
