@@ -82,7 +82,7 @@ describe("recordCall", () => {
     expect(recordCall(state, event)).toBe(3);
   });
 
-  it("resets counter when a different key appears", () => {
+  it("retains counters when a different key appears (cumulative)", () => {
     const state = createFreshTurnState();
     const a: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
     const b: ToolCallEvent = { toolName: "read", input: { path: "b.ts" } };
@@ -91,13 +91,13 @@ describe("recordCall", () => {
     recordCall(state, a);
     expect(state.callHistory.get(callKey("read", a.input))).toBe(2);
 
-    // Different key → reset
+    // Different key → NO reset (cumulative)
     recordCall(state, b);
     expect(state.callHistory.get(callKey("read", b.input))).toBe(1);
-    expect(state.callHistory.has(callKey("read", a.input))).toBe(false);
+    expect(state.callHistory.get(callKey("read", a.input))).toBe(2);
   });
 
-  it("resets counter when a different tool is called", () => {
+  it("retains counters when a different tool is called (cumulative)", () => {
     const state = createFreshTurnState();
     const read: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
     const bash: ToolCallEvent = { toolName: "bash", input: { command: "ls" } };
@@ -106,10 +106,10 @@ describe("recordCall", () => {
     recordCall(state, read);
     expect(state.callHistory.get(callKey("read", read.input))).toBe(2);
 
-    // Different tool → reset
+    // Different tool → NO reset
     recordCall(state, bash);
     expect(state.callHistory.get(callKey("bash", bash.input))).toBe(1);
-    expect(state.callHistory.has(callKey("read", read.input))).toBe(false);
+    expect(state.callHistory.get(callKey("read", read.input))).toBe(2);
   });
 });
 
@@ -283,15 +283,14 @@ describe("countRepeats", () => {
     expect(countRepeats(state)).toBe(0);
   });
 
-  it("counts unique keys with count > 1 (consecutive only)", () => {
+  it("counts unique keys with count > 1 (cumulative)", () => {
     const state = createFreshTurnState();
-    // With consecutive-repeat logic, only the last key's count persists.
-    // Different keys reset the counter, so only bash has count > 1.
+    // With cumulative logic, history is NOT cleared.
     recordCall(state, { toolName: "read", input: { path: "a.ts" } });
     recordCall(state, { toolName: "read", input: { path: "a.ts" } });
     recordCall(state, { toolName: "bash", input: { command: "ls" } });
     recordCall(state, { toolName: "bash", input: { command: "ls" } });
-    expect(countRepeats(state)).toBe(1); // only bash has count > 1
+    expect(countRepeats(state)).toBe(2); // both have count > 1
   });
 });
 

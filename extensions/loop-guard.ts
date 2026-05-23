@@ -26,6 +26,7 @@ import {
 export default function (pi: ExtensionAPI) {
   let config: LoopGuardConfig = createDefaultConfig();
   let turnState: TurnState = createFreshTurnState();
+  let lastProcessedMessageId: string | null = null;
 
   // ── Session lifecycle — restore / persist config ─────────────────────────
 
@@ -33,6 +34,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     turnState = createFreshTurnState();
+    lastProcessedMessageId = null;
     const entries = ctx.sessionManager.getEntries();
     for (const entry of entries) {
       if (entry.type === "custom" && entry.customType === CUSTOM_ENTRY_TYPE) {
@@ -40,7 +42,7 @@ export default function (pi: ExtensionAPI) {
         if (data) {
           // Merge: persisted values first, then new defaults on top.
           // This ensures code-level default changes (e.g. watch→block) take effect.
-          config = { ...data, ...createDefaultConfig() };
+          config = { ...createDefaultConfig(), ...data };
           ctx.ui.notify(
             `LoopGuard restored: ${config.disabled ? "disabled" : config.mode}`,
             "info",
@@ -65,8 +67,32 @@ export default function (pi: ExtensionAPI) {
   // ── Turn lifecycle ───────────────────────────────────────────────────────
 
   pi.on("turn_start", async (_event, ctx) => {
-    // NOTE: do NOT reset here — each tool call may be its own turn.
-    // Reset on session_start instead.
+    // Detect if this turn was triggered by a new user message.
+    // Every tool call is its own turn in this framework, but we only
+    // want to reset our loop history when the user provides a new prompt.
+    // We search backwards for the last USER message to track the ID.
+    const entries = ctx.sessionManager.getEntries();
+    let lastUserMessageEntry = null;
+
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (
+        entry.type === "message" &&
+        (entry.message as any)?.role === "user"
+      ) {
+        lastUserMessageEntry = entry;
+        break;
+      }
+    }
+
+    if (
+      lastUserMessageEntry &&
+      (lastUserMessageEntry as any).id !== lastProcessedMessageId
+    ) {
+      turnState = createFreshTurnState();
+      lastProcessedMessageId = (lastUserMessageEntry as any).id;
+    }
+
     updateFooter(ctx);
   });
 
@@ -118,7 +144,7 @@ export default function (pi: ExtensionAPI) {
 
       // After first block, inject a steering message so the LLM stops retrying.
       if (!turnState.steeringInjected) {
-        // turnState.steeringInjected = true;
+        turnState.steeringInjected = true;
         pi.sendMessage({
           customType: "loopguard-steering",
           content: `Important: LoopGuard has blocked repeated tool calls. ` +

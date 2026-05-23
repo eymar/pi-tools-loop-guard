@@ -15,7 +15,6 @@ export interface TurnState {
   callHistory: Map<string, number>;
   blockedCount: number;
   lastStateModifyingTool: string | null;
-  lastCallKey: string | null;
   steeringInjected: boolean;
 }
 
@@ -50,7 +49,6 @@ export function createFreshTurnState(): TurnState {
     callHistory: new Map(),
     blockedCount: 0,
     lastStateModifyingTool: null,
-    lastCallKey: null,
     steeringInjected: false,
   };
 }
@@ -135,7 +133,6 @@ export function applyStateReset(
 
 /**
  * Record a tool call in the turn state.
- * Resets all other counters (consecutive-repeat detection).
  * Returns the new count for this key.
  */
 export function recordCall(
@@ -143,13 +140,6 @@ export function recordCall(
   event: ToolCallEvent,
 ): number {
   const key = callKey(event.toolName, event.input);
-
-  // If this key differs from the last recorded key, reset all counters.
-  // This means we track consecutive repeats, not cumulative.
-  if (turnState.lastCallKey !== key) {
-    turnState.callHistory.clear();
-    turnState.lastCallKey = key;
-  }
 
   const count = (turnState.callHistory.get(key) || 0) + 1;
   turnState.callHistory.set(key, count);
