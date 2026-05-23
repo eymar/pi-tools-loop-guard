@@ -16,6 +16,7 @@ export interface TurnState {
   blockedCount: number;
   lastStateModifyingTool: string | null;
   lastCallKey: string | null;
+  steeringInjected: boolean;
 }
 
 export interface ToolCallEvent {
@@ -50,12 +51,13 @@ export function createFreshTurnState(): TurnState {
     blockedCount: 0,
     lastStateModifyingTool: null,
     lastCallKey: null,
+    steeringInjected: false,
   };
 }
 
 export function createDefaultConfig(): LoopGuardConfig {
   return {
-    mode: "watch",
+    mode: "block",
     thresholds: { ...DEFAULT_THRESHOLDS },
     disabled: false,
   };

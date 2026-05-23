@@ -113,6 +113,19 @@ export default function (pi: ExtensionAPI) {
         "warn",
       );
       updateFooter(ctx);
+
+      // After first block, inject a steering message so the LLM stops retrying.
+      if (!turnState.steeringInjected) {
+        turnState.steeringInjected = true;
+        pi.sendMessage({
+          customType: "loopguard-steering",
+          content: `Important: LoopGuard has blocked repeated tool calls. ` +
+            `Do NOT retry the same tool with the same arguments — it will be blocked again. ` +
+            `Use the results you already have from prior calls, or try a different approach.`,
+          display: false,
+        });
+      }
+
       return {
         block: true,
         reason: `LoopGuard: ${result.reason}`,
