@@ -32,6 +32,7 @@ export default function (pi: ExtensionAPI) {
   const CUSTOM_ENTRY_TYPE = "loop-guard-config";
 
   pi.on("session_start", async (_event, ctx) => {
+    turnState = createFreshTurnState();
     const entries = ctx.sessionManager.getEntries();
     for (const entry of entries) {
       if (entry.type === "custom" && entry.customType === CUSTOM_ENTRY_TYPE) {
@@ -62,7 +63,8 @@ export default function (pi: ExtensionAPI) {
   // ── Turn lifecycle ───────────────────────────────────────────────────────
 
   pi.on("turn_start", async (_event, ctx) => {
-    turnState = createFreshTurnState();
+    // NOTE: do NOT reset here — each tool call may be its own turn.
+    // Reset on session_start instead.
     updateFooter(ctx);
   });
 
