@@ -15,10 +15,10 @@ Detects and blocks repetitive tool calls within a single turn. Prevents the agen
 
 ```bash
 # From git
-pi install git:github.com/yourusername/pi-loop-guard
+pi install git:github.com/eymar/pi-tools-loop-guard
 
 # Try without installing
-pi -e git:github.com/yourusername/pi-loop-guard
+pi -e git:github.com/eymar/pi-tools-loop-guard
 ```
 
 ## Usage

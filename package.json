@@ -5,7 +5,7 @@
   "keywords": ["pi-package"],
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/pi-loop-guard.git"
+    "url": "https://github.com/eymar/pi-tools-loop-guard.git"
   },
   "license": "MIT",
   "pi": {
