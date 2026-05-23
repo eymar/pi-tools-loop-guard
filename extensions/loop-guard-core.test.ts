@@ -1,0 +1,299 @@
+import { describe, it, expect } from "vitest";
+import {
+  callKey,
+  createFreshTurnState,
+  createDefaultConfig,
+  recordCall,
+  evaluateCall,
+  clearCountersForResource,
+  applyStateReset,
+  countRepeats,
+  DEFAULT_THRESHOLDS,
+  STATE_MODIFYING_TOOLS,
+  type ToolCallEvent,
+} from "./loop-guard-core";
+
+// ── callKey ───────────────────────────────────────────────────────────────────
+
+describe("callKey", () => {
+  it("produces identical keys for same tool + args", () => {
+    const input = { path: "file.ts" };
+    expect(callKey("read", input)).toBe(callKey("read", input));
+  });
+
+  it("ignores key order in args", () => {
+    const a = { path: "file.ts", offset: 1 };
+    const b = { offset: 1, path: "file.ts" };
+    expect(callKey("read", a)).toBe(callKey("read", b));
+  });
+
+  it("differs when args differ", () => {
+    expect(callKey("read", { path: "a.ts" })).not.toBe(
+      callKey("read", { path: "b.ts" }),
+    );
+  });
+
+  it("differs when tool name differs", () => {
+    expect(callKey("read", { path: "a.ts" })).not.toBe(
+      callKey("bash", { path: "a.ts" }),
+    );
+  });
+
+  it("handles null input", () => {
+    expect(() => callKey("bash", null)).not.toThrow();
+    expect(callKey("bash", null)).toBe("bash::null");
+  });
+
+  it("handles undefined input", () => {
+    expect(() => callKey("bash", undefined)).not.toThrow();
+    expect(callKey("bash", undefined)).toBe("bash::undefined");
+  });
+
+  it("handles primitive input", () => {
+    expect(() => callKey("bash", "just-a-string")).not.toThrow();
+    expect(callKey("bash", "just-a-string")).toBe(
+      'bash::"just-a-string"',
+    );
+  });
+});
+
+// ── recordCall ────────────────────────────────────────────────────────────────
+
+describe("recordCall", () => {
+  it("increments count for repeated calls", () => {
+    const state = createFreshTurnState();
+    const event: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
+
+    expect(recordCall(state, event)).toBe(1);
+    expect(recordCall(state, event)).toBe(2);
+    expect(recordCall(state, event)).toBe(3);
+  });
+
+  it("tracks different calls independently", () => {
+    const state = createFreshTurnState();
+    const a: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
+    const b: ToolCallEvent = { toolName: "read", input: { path: "b.ts" } };
+
+    recordCall(state, a);
+    recordCall(state, a);
+    recordCall(state, b);
+
+    expect(state.callHistory.get(callKey("read", a.input))).toBe(2);
+    expect(state.callHistory.get(callKey("read", b.input))).toBe(1);
+  });
+
+  it("counts different tools separately", () => {
+    const state = createFreshTurnState();
+    const read: ToolCallEvent = { toolName: "read", input: { path: "a.ts" } };
+    const bash: ToolCallEvent = { toolName: "bash", input: { command: "ls" } };
+
+    recordCall(state, read);
+    recordCall(state, bash);
+    recordCall(state, read);
+
+    expect(state.callHistory.get(callKey("read", read.input))).toBe(2);
+    expect(state.callHistory.get(callKey("bash", bash.input))).toBe(1);
+  });
+});
+
+// ── evaluateCall ──────────────────────────────────────────────────────────────
+
+describe("evaluateCall", () => {
+  const event: ToolCallEvent = {
+    toolName: "fetch_content",
+    input: { url: "https://example.com" },
+  };
+
+  it("returns undefined when disabled", () => {
+    const config = createDefaultConfig();
+    config.disabled = true;
+    const state = createFreshTurnState();
+    expect(evaluateCall(config, state, event)).toBeUndefined();
+  });
+
+  it("returns undefined below threshold", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    expect(evaluateCall(config, state, event)).toBeUndefined();
+  });
+
+  it("nudges at threshold - 1", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    // fetch_content threshold = 2, so nudge at count === 1 (after 1 prior call)
+    recordCall(state, event);
+
+    const result = evaluateCall(config, state, event);
+    expect(result).toEqual({ block: false, nudge: true });
+  });
+
+  it("blocks at threshold in block mode", () => {
+    const config = createDefaultConfig();
+    config.mode = "block";
+    const state = createFreshTurnState();
+    // fetch_content threshold = 2, block at count >= 2
+    recordCall(state, event);
+    recordCall(state, event);
+
+    const result = evaluateCall(config, state, event);
+    expect(result?.block).toBe(true);
+    expect(result?.reason).toContain("fetch_content");
+    expect(result?.reason).toContain("3 times");
+  });
+
+  it("does NOT block at threshold in watch mode", () => {
+    const config = createDefaultConfig();
+    config.mode = "watch";
+    const state = createFreshTurnState();
+    recordCall(state, event);
+    recordCall(state, event);
+
+    const result = evaluateCall(config, state, event);
+    expect(result?.block).not.toBe(true);
+  });
+
+  it("uses default threshold for unknown tools", () => {
+    const config = createDefaultConfig();
+    config.mode = "block";
+    const state = createFreshTurnState();
+    const unknown: ToolCallEvent = { toolName: "some_new_tool", input: {} };
+
+    // default threshold = 3, so need 3 prior calls to block
+    recordCall(state, unknown);
+    recordCall(state, unknown);
+    recordCall(state, unknown);
+
+    const result = evaluateCall(config, state, unknown);
+    expect(result?.block).toBe(true);
+  });
+});
+
+// ── clearCountersForResource ──────────────────────────────────────────────────
+
+describe("clearCountersForResource", () => {
+  it("removes counters for the matching tool + path", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "config.json" } });
+    recordCall(state, { toolName: "read", input: { path: "config.json" } });
+    recordCall(state, { toolName: "read", input: { path: "other.ts" } });
+
+    clearCountersForResource(state, "read", "config.json");
+
+    expect(state.callHistory.has(callKey("read", { path: "config.json" }))).toBe(
+      false,
+    );
+    expect(state.callHistory.has(callKey("read", { path: "other.ts" }))).toBe(
+      true,
+    );
+  });
+
+  it("does not affect other tools", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+    recordCall(state, { toolName: "bash", input: { command: "ls" } });
+
+    clearCountersForResource(state, "read", "a.ts");
+
+    expect(state.callHistory.has(callKey("read", { path: "a.ts" }))).toBe(false);
+    expect(state.callHistory.has(callKey("bash", { command: "ls" }))).toBe(true);
+  });
+});
+
+// ── applyStateReset ───────────────────────────────────────────────────────────
+
+describe("applyStateReset", () => {
+  it("clears read counters after write to same file", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "config.json" } });
+    recordCall(state, { toolName: "read", input: { path: "config.json" } });
+
+    applyStateReset(state, {
+      toolName: "write",
+      input: { path: "config.json", content: "{}" },
+    });
+
+    expect(state.callHistory.has(callKey("read", { path: "config.json" }))).toBe(
+      false,
+    );
+  });
+
+  it("clears read counters after edit to same file", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "ctx_read", input: { path: "app.ts" } });
+
+    applyStateReset(state, {
+      toolName: "edit",
+      input: { path: "app.ts", edits: [] },
+    });
+
+    expect(state.callHistory.has(callKey("ctx_read", { path: "app.ts" }))).toBe(
+      false,
+    );
+  });
+
+  it("does NOT clear counters for non-state-modifying tools", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+
+    applyStateReset(state, {
+      toolName: "read",
+      input: { path: "a.ts" },
+    });
+
+    expect(state.callHistory.has(callKey("read", { path: "a.ts" }))).toBe(true);
+  });
+
+  it("does NOT clear counters when paths differ", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+
+    applyStateReset(state, {
+      toolName: "write",
+      input: { path: "b.ts", content: "" },
+    });
+
+    expect(state.callHistory.has(callKey("read", { path: "a.ts" }))).toBe(true);
+  });
+});
+
+// ── countRepeats ──────────────────────────────────────────────────────────────
+
+describe("countRepeats", () => {
+  it("returns 0 when no repeats", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+    recordCall(state, { toolName: "read", input: { path: "b.ts" } });
+    expect(countRepeats(state)).toBe(0);
+  });
+
+  it("counts unique keys with count > 1", () => {
+    const state = createFreshTurnState();
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+    recordCall(state, { toolName: "read", input: { path: "a.ts" } });
+    recordCall(state, { toolName: "bash", input: { command: "ls" } });
+    recordCall(state, { toolName: "bash", input: { command: "ls" } });
+    expect(countRepeats(state)).toBe(2);
+  });
+});
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+describe("DEFAULT_THRESHOLDS", () => {
+  it("has expected defaults", () => {
+    expect(DEFAULT_THRESHOLDS.fetch_content).toBe(2);
+    expect(DEFAULT_THRESHOLDS.web_search).toBe(2);
+    expect(DEFAULT_THRESHOLDS.read).toBe(3);
+    expect(DEFAULT_THRESHOLDS.bash).toBe(5);
+    expect(DEFAULT_THRESHOLDS.default).toBe(3);
+  });
+});
+
+describe("STATE_MODIFYING_TOOLS", () => {
+  it("includes expected tools", () => {
+    expect(STATE_MODIFYING_TOOLS.has("write")).toBe(true);
+    expect(STATE_MODIFYING_TOOLS.has("edit")).toBe(true);
+    expect(STATE_MODIFYING_TOOLS.has("bash")).toBe(true);
+    expect(STATE_MODIFYING_TOOLS.has("ctx_shell")).toBe(true);
+    expect(STATE_MODIFYING_TOOLS.has("read")).toBe(false);
+  });
+});
