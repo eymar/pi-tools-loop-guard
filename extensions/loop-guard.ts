@@ -76,39 +76,34 @@ export default function (pi: ExtensionAPI) {
     updateFooter(ctx);
   });
 
-  // ── Tool execution end — count calls + state reset ───────────────────────
-
-  pi.on("tool_execution_end", async (event, ctx) => {
-    if (config.disabled) return;
-    recordCall(turnState, { toolName: event.toolName, input: event.input });
-    applyStateReset(turnState, { toolName: event.toolName, input: event.input });
-    updateFooter(ctx);
-  });
-
-  // ── Tool call hook — nudge at threshold-1, block at threshold ───────────
+  // ── Tool call hook — count, nudge, and potentially block ─────────────────
+  // NOTE: counting happens here because tool_call has event.input.
+  //       tool_execution_end only has result/isError, not input.
 
   pi.on("tool_call", async (event, ctx) => {
     if (config.disabled) return;
 
-    const result = evaluateCall(config, turnState, {
-      toolName: event.toolName,
-      input: event.input,
-    });
+    const toolEvent = { toolName: event.toolName, input: event.input };
 
-    if (!result) return;
+    // Evaluate BEFORE recording (check existing count)
+    const result = evaluateCall(config, turnState, toolEvent);
 
-    // Stage 1: Nudge
-    if (result.nudge) {
+    // Stage 1: Nudge (don't block, but warn)
+    if (result?.nudge) {
       const count = turnState.callHistory.get(callKey(event.toolName, event.input)) || 0;
       ctx.ui.setStatus(
         "loop-guard",
         `⚠️ ${event.toolName} repeated ${count + 1}x`,
       );
+      // Still record the call (user chose to proceed)
+      recordCall(turnState, toolEvent);
+      applyStateReset(turnState, toolEvent);
+      updateFooter(ctx);
       return;
     }
 
-    // Stage 2: Block
-    if (result.block) {
+    // Stage 2: Block (don't record, don't count)
+    if (result?.block) {
       turnState.blockedCount++;
       const count = turnState.callHistory.get(callKey(event.toolName, event.input)) || 0;
       ctx.ui.notify(
@@ -121,6 +116,18 @@ export default function (pi: ExtensionAPI) {
         reason: `LoopGuard: ${result.reason}`,
       };
     }
+
+    // No action needed — record the call normally
+    recordCall(turnState, toolEvent);
+    applyStateReset(turnState, toolEvent);
+    updateFooter(ctx);
+  });
+
+  // ── Tool execution end — update footer after completion ───────────────────
+
+  pi.on("tool_execution_end", async (_event, ctx) => {
+    if (config.disabled) return;
+    updateFooter(ctx);
   });
 
   // ── /loopguard command ───────────────────────────────────────────────────
