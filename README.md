@@ -30,22 +30,22 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 
 ## Default Thresholds
 
-| Tool | Max Repeats |
-|------|------------|
-| `fetch_content` | 2 |
-| `web_search` | 2 |
-| `code_search` | 2 |
-| `read` / `ctx_read` | 3 |
-| `ctx_grep` / `ctx_find` | 3 |
-| `bash` | 5 |
-| default | 3 |
+| Tool | Allowed Calls | Steer On | Block On |
+|------|-------------|----------|----------|
+| `fetch_content` | 2 | 3rd | 4th |
+| `web_search` | 2 | 3rd | 4th |
+| `code_search` | 2 | 3rd | 4th |
+| `read` / `ctx_read` | 3 | 4th | 5th |
+| `ctx_grep` / `ctx_find` | 3 | 4th | 5th |
+| `bash` | 5 | 6th | 7th |
+| default | 3 | 4th | 5th |
 
 ## How It Works
 
 1. **Key Derivation:** Each tool call is keyed as `toolName::sortedArgsJSON` (volatile fields like `timeout` and `toolCallId` are stripped).
 2. **Cumulative Tracking:** Counts are tracked in a `Map`. Unlike simple consecutive detection, LoopGuard maintains history for the entire user interaction (catches A-B-A-B loops).
 3. **Turn Reset:** Counters reset when a new user message is detected, ensuring protection throughout long autonomous tool-call chains.
-4. **Steer then block:** When a tool reaches its threshold, a specific steering message is injected telling the model which tool/args to stop calling. If the model retries anyway, the next call is blocked.
+4. **Steer then block:** When a tool reaches its threshold, a specific steering message is injected telling the model which tool/args to stop calling. If the model retries anyway, the next call is blocked. The threshold means "allow this many calls" — so a threshold of 2 means 2 successful calls, then steer on the 3rd, then block on the 4th.
 5. **Modification Awareness:** After `write` or `edit`, read counters for the specifically modified file are cleared, allowing the agent to verify its changes immediately.
 
 ## Known Limitations
