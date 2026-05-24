@@ -11,7 +11,7 @@ import {
   DEFAULT_THRESHOLDS,
   STATE_MODIFYING_TOOLS,
   type ToolCallEvent,
-} from "./loop-guard-core";
+} from "../loop-guard-core";
 
 // ── callKey ───────────────────────────────────────────────────────────────────
 
