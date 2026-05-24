@@ -66,6 +66,30 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    // Start the shared timer on the first tool call of the turn
+    if (turnState.timerStart === undefined) {
+      turnState.timerStart = Date.now();
+    }
+
+    // Check if elapsed time exceeds 2 minutes — reset counters if so
+    const elapsedMs = Date.now() - turnState.timerStart;
+    if (elapsedMs > 120_000) {
+      const hadSteeredKeys = turnState.steeredKeys.size > 0;
+      turnState = createFreshTurnState();
+      turnState.timerStart = Date.now(); // restart timer for the new batch
+
+      if (hadSteeredKeys) {
+        pi.sendMessage({
+          customType: "loopguard-steering",
+          content: `LoopGuard: time-based reset triggered (${Math.round(elapsedMs / 1000)}s elapsed). Counters cleared — you may resume calling tools.`,
+          display: true,
+        });
+      }
+
+      updateFooter(ctx);
+      return;
+    }
+
     const toolEvent = { toolName: event.toolName, input: event.input };
 
     // Evaluate BEFORE recording (evaluateCall includes +1 for the current call)
@@ -186,12 +210,15 @@ export default function (pi: ExtensionAPI) {
 
     const repeats = countRepeats(turnState);
 
+    const elapsedS = turnState.timerStart ? Math.round((Date.now() - turnState.timerStart) / 1000) : 0;
+    const elapsedInfo = elapsedS > 0 ? ` ${elapsedS}s` : "";
+
     if (repeats === 0) {
-      ctx.ui.setStatus("loop-guard", "👁️ LoopGuard: ok");
+      ctx.ui.setStatus("loop-guard", `👁️ LoopGuard: ok${elapsedInfo}`);
     } else {
       ctx.ui.setStatus(
         "loop-guard",
-        `👁️ LoopGuard: ${repeats} repeat${repeats > 1 ? "s" : ""}, ${turnState.blockedCount} blocked`,
+        `👁️ LoopGuard: ${repeats} repeat${repeats > 1 ? "s" : ""}, ${turnState.blockedCount} blocked${elapsedInfo}`,
       );
     }
   }

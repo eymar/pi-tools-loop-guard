@@ -14,6 +14,7 @@ export interface TurnState {
   callHistory: Map<string, number>;
   blockedCount: number;
   steeredKeys: Set<string>; // keys that received a steering message
+  timerStart?: number; // timestamp (ms) of the first tool call in the turn
 }
 
 export interface ToolCallEvent {
@@ -45,6 +46,7 @@ export function createFreshTurnState(): TurnState {
     callHistory: new Map(),
     blockedCount: 0,
     steeredKeys: new Set(),
+    timerStart: undefined,
   };
 }
 

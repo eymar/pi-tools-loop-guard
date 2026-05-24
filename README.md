@@ -8,6 +8,8 @@ Detects and blocks repetitive tool calls within a single user interaction. Preve
 - **Enabled by default** — disable with `/loopguard off`.
 - **State-aware** — resets read counters after `write`/`edit` (avoids false positives when re-reading modified files).
 - **Per-tool thresholds** — different tools have different repeat limits (see table below).
+- **Time-based reset** — after 2 minutes of tool calls in a turn, counters are automatically cleared (useful for long-running tasks that legitimately reuse tools).
+- **Manual reset** — the agent can reset counters by running `echo '/loopguard reset'` in bash (escape hatch for false positives).
 
 ## Install
 
@@ -28,6 +30,16 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 /loopguard status   # Show current status and thresholds
 ```
 
+### Manual Reset
+
+If LoopGuard blocks a tool call you genuinely need, reset counters by running:
+
+```bash
+echo '/loopguard reset'
+```
+
+This clears all counters and restarts the 2-minute timer.
+
 ## Default Thresholds
 
 | Tool | Allowed Calls | Steer On | Block On |
@@ -47,6 +59,8 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 3. **Turn Reset:** Counters reset when a new user message is detected, ensuring protection throughout long autonomous tool-call chains.
 4. **Steer then block:** When a tool reaches its threshold, a specific steering message is injected telling the model which tool/args to stop calling. If the model retries anyway, the next call is blocked. The threshold means "allow this many calls" — so a threshold of 2 means 2 successful calls, then steer on the 3rd, then block on the 4th.
 5. **Modification Awareness:** After `write` or `edit`, read counters for the specifically modified file are cleared, allowing the agent to verify its changes immediately.
+6. **Time-based reset:** A shared timer starts on the first tool call of a turn. If 2 minutes elapse, all counters are cleared and the timer restarts. If there were steered keys (repeated calls), a steering message announces the reset; otherwise it happens silently.
+7. **Manual reset:** The agent can run `echo '/loopguard reset'` via bash to immediately clear all counters and restart the timer — useful for overriding false positives.
 
 ## Known Limitations
 
