@@ -193,6 +193,41 @@ describe("evaluateCall", () => {
     expect(result?.block).not.toBe(true);
   });
 
+  it("A-B-A-B loop: steer then block across interleaved calls", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    const a: ToolCallEvent = { toolName: "fetch_content", input: { url: "https://a.com" } };
+    const b: ToolCallEvent = { toolName: "fetch_content", input: { url: "https://b.com" } };
+
+    // A (1st): no action
+    expect(evaluateCall(config, state, a)).toBeUndefined();
+    recordCall(state, a);
+
+    // B (1st): no action
+    expect(evaluateCall(config, state, b)).toBeUndefined();
+    recordCall(state, b);
+
+    // A (2nd): steer at threshold-1 (fetch_content threshold = 2)
+    const steerA = evaluateCall(config, state, a);
+    expect(steerA?.steer).toBe(true);
+    state.steeredKeys.add(callKey(a.toolName, a.input));
+    recordCall(state, a);
+
+    // B (2nd): steer at threshold-1
+    const steerB = evaluateCall(config, state, b);
+    expect(steerB?.steer).toBe(true);
+    state.steeredKeys.add(callKey(b.toolName, b.input));
+    recordCall(state, b);
+
+    // A (3rd): block (was steered)
+    const blockA = evaluateCall(config, state, a);
+    expect(blockA?.block).toBe(true);
+
+    // B (3rd): block (was steered)
+    const blockB = evaluateCall(config, state, b);
+    expect(blockB?.block).toBe(true);
+  });
+
   it("does NOT block when disabled", () => {
     const config = createDefaultConfig();
     config.disabled = true;
