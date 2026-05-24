@@ -45,13 +45,14 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 1. **Key Derivation:** Each tool call is keyed as `toolName::sortedArgsJSON` (volatile fields like `timeout` and `toolCallId` are stripped).
 2. **Cumulative Tracking:** Counts are tracked in a `Map`. Unlike simple consecutive detection, LoopGuard maintains history for the entire user interaction (catches A-B-A-B loops).
 3. **Turn Reset:** Counters reset when a new user message is detected, ensuring protection throughout long autonomous tool-call chains.
-4. **Block:** When a tool exceeds its threshold, the call is blocked and the reason is injected into the context for the model to see.
+4. **Steer then block:** When a tool reaches its threshold, a specific steering message is injected telling the model which tool/args to stop calling. If the model retries anyway, the next call is blocked.
 5. **Modification Awareness:** After `write` or `edit`, read counters for the specifically modified file are cleared, allowing the agent to verify its changes immediately.
 
 ## Known Limitations
 
 - **Subagent counters are isolated** — when installed globally, subagents have their own independent LoopGuard counters. The main agent's and a subagent's counts do not share state, so each can independently hit the threshold.
 - **Exact-match only** — `read({path: "a.ts", offset: 1})` and `read({path: "a.ts", offset: 2})` are counted separately.
+- **Failed calls counted the same as successful ones** — if `bash("npm install")` fails and the model retries, it's counted as a repeat. Retries after errors may trigger false blocks.
 
 ## Roadmap
 
