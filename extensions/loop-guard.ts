@@ -56,7 +56,15 @@ export default function (pi: ExtensionAPI) {
     event: Parameters<Parameters<typeof pi.on>[1]>["0"],
     ctx: Parameters<Parameters<typeof pi.on>[1]>["1"],
   ): Promise<void | { block: true; reason: string }> {
+
     if (config.disabled) return;
+
+    // Intercept bash calls with echo '/loopguard reset' so the LLM can reset counters
+    if (event.toolName === "bash" && isResetCommand(event.input)) {
+      turnState = createFreshTurnState();
+      updateFooter(ctx);
+      return;
+    }
 
     const toolEvent = { toolName: event.toolName, input: event.input };
 
@@ -76,7 +84,8 @@ export default function (pi: ExtensionAPI) {
         customType: "loopguard-steering",
         content: `LoopGuard: ${result.toolName} called ${result.count} times with identical args (${argsSummary}). ` +
           `The result from the first call is still in your context. Do not call ${result.toolName} with these args again — ` +
-          `the next call in this turn will be blocked. Use the prior result instead.`,
+          `the next call in this turn will be blocked. Use the prior result instead. ` +
+          `If you're sure that LoopGuard's signal is false positive, then you may call bash with command: echo '/loopguard reset'.`,
         display: true,
       });
 
@@ -147,6 +156,14 @@ export default function (pi: ExtensionAPI) {
     }
 
     updateFooter(ctx);
+  }
+
+  function isResetCommand(input: unknown): boolean {
+    if (typeof input !== "object" || !input) return false;
+    const command = (input as { command?: string }).command;
+    if (typeof command !== "string") return false;
+    const trimmed = command.trim().toLowerCase();
+    return trimmed === "echo '/loopguard reset'" || trimmed === 'echo "/loopguard reset"';
   }
 
   function getArgumentCompletions(prefix: string) {
