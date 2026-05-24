@@ -134,19 +134,8 @@ describe("evaluateCall", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
   });
 
-  it("nudges at threshold - 1", () => {
+  it("blocks at threshold", () => {
     const config = createDefaultConfig();
-    const state = createFreshTurnState();
-    // fetch_content threshold = 2, so nudge at count === 1 (after 1 prior call)
-    recordCall(state, event);
-
-    const result = evaluateCall(config, state, event);
-    expect(result).toEqual({ block: false, nudge: true });
-  });
-
-  it("blocks at threshold in block mode", () => {
-    const config = createDefaultConfig();
-    config.mode = "block";
     const state = createFreshTurnState();
     // fetch_content threshold = 2, block at count >= 2
     recordCall(state, event);
@@ -158,9 +147,9 @@ describe("evaluateCall", () => {
     expect(result?.reason).toContain("3 times");
   });
 
-  it("does NOT block at threshold in watch mode", () => {
+  it("does NOT block when disabled", () => {
     const config = createDefaultConfig();
-    config.mode = "watch";
+    config.disabled = true;
     const state = createFreshTurnState();
     recordCall(state, event);
     recordCall(state, event);
@@ -171,7 +160,6 @@ describe("evaluateCall", () => {
 
   it("uses default threshold for unknown tools", () => {
     const config = createDefaultConfig();
-    config.mode = "block";
     const state = createFreshTurnState();
     const unknown: ToolCallEvent = { toolName: "some_new_tool", input: {} };
 
@@ -353,7 +341,6 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
 
   it("full workflow: recordCall + evaluateCall works with real input", () => {
     const config = createDefaultConfig();
-    config.mode = "block";
     const state = createFreshTurnState();
     const event: ToolCallEvent = {
       toolName: "fetch_content",
@@ -364,12 +351,11 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
     recordCall(state, event);
 
-    // Call 2: nudge at threshold-1 (fetch_content threshold = 2)
-    const nudge = evaluateCall(config, state, event);
-    expect(nudge?.nudge).toBe(true);
+    // Call 2: still under threshold, recorded
+    expect(evaluateCall(config, state, event)).toBeUndefined();
     recordCall(state, event);
 
-    // Call 3: block at threshold
+    // Call 3: block at threshold (fetch_content threshold = 2)
     const block = evaluateCall(config, state, event);
     expect(block?.block).toBe(true);
   });

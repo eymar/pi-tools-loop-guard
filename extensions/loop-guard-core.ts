@@ -6,7 +6,6 @@
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export interface LoopGuardConfig {
-  mode: "watch" | "block";
   thresholds: Record<string, number>;
   disabled: boolean;
 }
@@ -55,7 +54,6 @@ export function createFreshTurnState(): TurnState {
 
 export function createDefaultConfig(): LoopGuardConfig {
   return {
-    mode: "block",
     thresholds: { ...DEFAULT_THRESHOLDS },
     disabled: false,
   };
@@ -154,26 +152,16 @@ export function evaluateCall(
   config: LoopGuardConfig,
   turnState: TurnState,
   event: ToolCallEvent,
-):
-  | { block: true; reason: string; nudge: false }
-  | { block: false; reason?: never; nudge: true }
-  | undefined {
+): { block: true; reason: string } | undefined {
   if (config.disabled) return;
 
   const key = callKey(event.toolName, event.input);
   const count = turnState.callHistory.get(key) || 0;
   const threshold = config.thresholds[event.toolName] ?? config.thresholds.default;
 
-  // Stage 1: Nudge at threshold - 1
-  if (count === threshold - 1) {
-    return { block: false, nudge: true };
-  }
-
-  // Stage 2: Block at threshold (only in block mode)
-  if (count >= threshold && config.mode === "block") {
+  if (count >= threshold) {
     return {
       block: true,
-      nudge: false,
       reason: `${event.toolName} called ${count + 1} times with identical args this turn. ` +
         `Prior result is in context. Use it instead of re-calling.`,
     };

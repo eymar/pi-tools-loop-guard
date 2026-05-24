@@ -5,12 +5,9 @@ Detects and blocks repetitive tool calls within a single user interaction. Preve
 ## Features
 
 - **Cumulative loop detection** — tracks `toolName + serialized args` across all tool calls in a user interaction (catches A-B-A-B loops).
-- **Two-stage response** — footer warning at `threshold-1`, block at `threshold`.
-- **Intelligent Turn Grouping** — automatically resets counters when you send a new message, but keeps history across long tool-call chains.
-- **Watch mode by default** — warnings only; enable blocking with `/loopguard block`.
+- **Enabled by default** — disable with `/loopguard off`.
 - **State-aware** — resets read counters after `write`/`edit` (avoids false positives when re-reading modified files).
-- **Configurable thresholds** — per-tool limits via `/loopguard config`.
-- **Session persistence** — configuration is saved in the session tree and survives `/reload`.
+- **Per-tool thresholds** — different tools have different repeat limits (see table below).
 
 ## Install
 
@@ -26,12 +23,9 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 
 ```
 /loopguard          # Show status
-/loopguard on       # Enable (watch mode)
+/loopguard on       # Enable
 /loopguard off      # Disable
-/loopguard block    # Enable blocking mode
-/loopguard watch    # Switch to watch mode (warnings only)
-/loopguard status   # Show current config and thresholds
-/loopguard config   # Show config widget
+/loopguard status   # Show current status and thresholds
 ```
 
 ## Default Thresholds
@@ -49,11 +43,9 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 ## How It Works
 
 1. **Key Derivation:** Each tool call is keyed as `toolName::sortedArgsJSON` (volatile fields like `timeout` and `toolCallId` are stripped).
-2. **Cumulative Tracking:** Counts are tracked in a `Map`. Unlike simple consecutive detection, LoopGuard maintains history for the entire user turn.
-3. **Stateful Reset:** LoopGuard tracks the ID of the last user message. It only resets counters when a **new user message** is detected, ensuring protection throughout long autonomous loops.
-4. **Action:**
-   - At `threshold - 1`: footer warning (⚠️ nudge).
-   - At `threshold` (block mode): call is blocked with the reason injected into the context for the model to see.
+2. **Cumulative Tracking:** Counts are tracked in a `Map`. Unlike simple consecutive detection, LoopGuard maintains history for the entire user interaction (catches A-B-A-B loops).
+3. **Turn Reset:** Counters reset when a new user message is detected, ensuring protection throughout long autonomous tool-call chains.
+4. **Block:** When a tool exceeds its threshold, the call is blocked and the reason is injected into the context for the model to see.
 5. **Modification Awareness:** After `write` or `edit`, read counters for the specifically modified file are cleared, allowing the agent to verify its changes immediately.
 
 ## Known Limitations
