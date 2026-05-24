@@ -154,18 +154,18 @@ export function evaluateCall(
   const count = turnState.callHistory.get(key) || 0;
   const threshold = config.thresholds[event.toolName] ?? config.thresholds.default;
 
-  // Steer at threshold - 1: warn the model before blocking
-  if (count === threshold - 1 && !turnState.steeredKeys.has(key)) {
+  // Steer at threshold: warn the model before blocking
+  if (count === threshold && !turnState.steeredKeys.has(key)) {
     return {
       steer: true,
       toolName: event.toolName,
       args: JSON.stringify(event.input),
-      count: count + 1, // this call will bring it to threshold
+      count: count + 1, // this call brings it to threshold + 1
     };
   }
 
-  // Block at threshold only if we already steered this key
-  if (count >= threshold && turnState.steeredKeys.has(key)) {
+  // Block only if we already steered this key
+  if (count > threshold && turnState.steeredKeys.has(key)) {
     return {
       block: true,
       reason: `${event.toolName} called ${count + 1} times with identical args this turn. ` +

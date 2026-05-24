@@ -134,21 +134,23 @@ describe("evaluateCall", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
   });
 
-  it("steers at threshold - 1", () => {
+  it("steers at threshold", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
-    // fetch_content threshold = 2, steer at count === 1 (after 1 prior call)
+    // fetch_content threshold = 2, steer at count === 2 (after 2 prior calls)
+    recordCall(state, event);
     recordCall(state, event);
 
     const result = evaluateCall(config, state, event);
     expect(result?.steer).toBe(true);
     expect(result?.toolName).toBe("fetch_content");
-    expect(result?.count).toBe(2); // this call brings it to threshold
+    expect(result?.count).toBe(3); // this call brings it to threshold + 1
   });
 
   it("does NOT steer twice for the same key", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
+    recordCall(state, event);
     recordCall(state, event);
 
     const steer = evaluateCall(config, state, event);
@@ -164,10 +166,11 @@ describe("evaluateCall", () => {
     expect(next?.steer).not.toBe(true);
   });
 
-  it("blocks at threshold after steering", () => {
+  it("blocks after threshold + 1 when steered", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
-    // fetch_content threshold = 2
+    // fetch_content threshold = 2, block at count > 2 (i.e. 3)
+    recordCall(state, event);
     recordCall(state, event);
     recordCall(state, event);
 
@@ -178,13 +181,14 @@ describe("evaluateCall", () => {
     const result = evaluateCall(config, state, event);
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain("fetch_content");
-    expect(result?.reason).toContain("3 times");
+    expect(result?.reason).toContain("4 times");
   });
 
-  it("does NOT block at threshold without prior steer", () => {
+  it("does NOT block at threshold + 1 without prior steer", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
     // fetch_content threshold = 2
+    recordCall(state, event);
     recordCall(state, event);
     recordCall(state, event);
 
@@ -207,23 +211,31 @@ describe("evaluateCall", () => {
     expect(evaluateCall(config, state, b)).toBeUndefined();
     recordCall(state, b);
 
-    // A (2nd): steer at threshold-1 (fetch_content threshold = 2)
+    // A (2nd): no action (count = 1, threshold = 2)
+    expect(evaluateCall(config, state, a)).toBeUndefined();
+    recordCall(state, a);
+
+    // B (2nd): no action
+    expect(evaluateCall(config, state, b)).toBeUndefined();
+    recordCall(state, b);
+
+    // A (3rd): steer at threshold (fetch_content threshold = 2)
     const steerA = evaluateCall(config, state, a);
     expect(steerA?.steer).toBe(true);
     state.steeredKeys.add(callKey(a.toolName, a.input));
     recordCall(state, a);
 
-    // B (2nd): steer at threshold-1
+    // B (3rd): steer at threshold
     const steerB = evaluateCall(config, state, b);
     expect(steerB?.steer).toBe(true);
     state.steeredKeys.add(callKey(b.toolName, b.input));
     recordCall(state, b);
 
-    // A (3rd): block (was steered)
+    // A (4th): block (was steered, count > threshold)
     const blockA = evaluateCall(config, state, a);
     expect(blockA?.block).toBe(true);
 
-    // B (3rd): block (was steered)
+    // B (4th): block (was steered)
     const blockB = evaluateCall(config, state, b);
     expect(blockB?.block).toBe(true);
   });
@@ -244,7 +256,8 @@ describe("evaluateCall", () => {
     const state = createFreshTurnState();
     const unknown: ToolCallEvent = { toolName: "some_new_tool", input: {} };
 
-    // default threshold = 3, so need 3 prior calls to block
+    // default threshold = 3, block at count > 3 (i.e. 4)
+    recordCall(state, unknown);
     recordCall(state, unknown);
     recordCall(state, unknown);
     recordCall(state, unknown);
@@ -436,7 +449,11 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
     recordCall(state, event);
 
-    // Call 2: steer at threshold - 1
+    // Call 2: no action (count = 1, threshold = 2)
+    expect(evaluateCall(config, state, event)).toBeUndefined();
+    recordCall(state, event);
+
+    // Call 3: steer at threshold (count = 2)
     const steer = evaluateCall(config, state, event);
     expect(steer?.steer).toBe(true);
     // Handler marks key as steered and records the call
@@ -444,7 +461,7 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
     state.steeredKeys.add(key);
     recordCall(state, event);
 
-    // Call 3: block at threshold (was steered)
+    // Call 4: block (count > threshold, was steered)
     const block = evaluateCall(config, state, event);
     expect(block?.block).toBe(true);
   });
