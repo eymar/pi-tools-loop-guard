@@ -50,7 +50,7 @@ pi -e git:github.com/eymar/pi-tools-loop-guard
 
 ## Known Limitations
 
-- **Subagent tool calls are not tracked** — subagents run in separate processes with isolated extension hooks. LoopGuard only tracks the main agent's direct tool calls.
+- **Subagent counters are isolated** — when installed globally, subagents have their own independent LoopGuard counters. The main agent's and a subagent's counts do not share state, so each can independently hit the threshold.
 - **Exact-match only** — `read({path: "a.ts", offset: 1})` and `read({path: "a.ts", offset: 2})` are counted separately.
 
 ## Roadmap
