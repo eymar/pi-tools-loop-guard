@@ -134,17 +134,63 @@ describe("evaluateCall", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
   });
 
-  it("blocks at threshold", () => {
+  it("steers at threshold - 1", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
-    // fetch_content threshold = 2, block at count >= 2
+    // fetch_content threshold = 2, steer at count === 1 (after 1 prior call)
+    recordCall(state, event);
+
+    const result = evaluateCall(config, state, event);
+    expect(result?.steer).toBe(true);
+    expect(result?.toolName).toBe("fetch_content");
+    expect(result?.count).toBe(2); // this call brings it to threshold
+  });
+
+  it("does NOT steer twice for the same key", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    recordCall(state, event);
+
+    const steer = evaluateCall(config, state, event);
+    expect(steer?.steer).toBe(true);
+
+    // Simulate the handler marking the key as steered
+    const key = callKey(event.toolName, event.input);
+    state.steeredKeys.add(key);
+    recordCall(state, event);
+
+    // Next call should evaluate as block, not steer again
+    const next = evaluateCall(config, state, event);
+    expect(next?.steer).not.toBe(true);
+  });
+
+  it("blocks at threshold after steering", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    // fetch_content threshold = 2
     recordCall(state, event);
     recordCall(state, event);
+
+    // Mark as steered (simulating handler adding the key)
+    const key = callKey(event.toolName, event.input);
+    state.steeredKeys.add(key);
 
     const result = evaluateCall(config, state, event);
     expect(result?.block).toBe(true);
     expect(result?.reason).toContain("fetch_content");
     expect(result?.reason).toContain("3 times");
+  });
+
+  it("does NOT block at threshold without prior steer", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+    // fetch_content threshold = 2
+    recordCall(state, event);
+    recordCall(state, event);
+
+    // No key in steeredKeys — should not block
+    const result = evaluateCall(config, state, event);
+    expect(result?.block).not.toBe(true);
   });
 
   it("does NOT block when disabled", () => {
@@ -167,6 +213,10 @@ describe("evaluateCall", () => {
     recordCall(state, unknown);
     recordCall(state, unknown);
     recordCall(state, unknown);
+
+    // Simulate prior steer
+    const key = callKey(unknown.toolName, unknown.input);
+    state.steeredKeys.add(key);
 
     const result = evaluateCall(config, state, unknown);
     expect(result?.block).toBe(true);
@@ -295,11 +345,11 @@ describe("DEFAULT_THRESHOLDS", () => {
 });
 
 describe("STATE_MODIFYING_TOOLS", () => {
-  it("includes expected tools", () => {
+  it("includes only write and edit (bash too broad to reset)", () => {
     expect(STATE_MODIFYING_TOOLS.has("write")).toBe(true);
     expect(STATE_MODIFYING_TOOLS.has("edit")).toBe(true);
-    expect(STATE_MODIFYING_TOOLS.has("bash")).toBe(true);
-    expect(STATE_MODIFYING_TOOLS.has("ctx_shell")).toBe(true);
+    expect(STATE_MODIFYING_TOOLS.has("bash")).toBe(false);
+    expect(STATE_MODIFYING_TOOLS.has("ctx_shell")).toBe(false);
     expect(STATE_MODIFYING_TOOLS.has("read")).toBe(false);
   });
 });
@@ -339,7 +389,7 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
     expect(key1).toBe("bash::undefined");
   });
 
-  it("full workflow: recordCall + evaluateCall works with real input", () => {
+  it("full workflow: steer then block (fetch_content threshold = 2)", () => {
     const config = createDefaultConfig();
     const state = createFreshTurnState();
     const event: ToolCallEvent = {
@@ -351,11 +401,15 @@ describe("regression: counting in wrong hook produces undefined keys", () => {
     expect(evaluateCall(config, state, event)).toBeUndefined();
     recordCall(state, event);
 
-    // Call 2: still under threshold, recorded
-    expect(evaluateCall(config, state, event)).toBeUndefined();
+    // Call 2: steer at threshold - 1
+    const steer = evaluateCall(config, state, event);
+    expect(steer?.steer).toBe(true);
+    // Handler marks key as steered and records the call
+    const key = callKey(event.toolName, event.input);
+    state.steeredKeys.add(key);
     recordCall(state, event);
 
-    // Call 3: block at threshold (fetch_content threshold = 2)
+    // Call 3: block at threshold (was steered)
     const block = evaluateCall(config, state, event);
     expect(block?.block).toBe(true);
   });

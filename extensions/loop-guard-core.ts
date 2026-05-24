@@ -13,8 +13,7 @@ export interface LoopGuardConfig {
 export interface TurnState {
   callHistory: Map<string, number>;
   blockedCount: number;
-  lastStateModifyingTool: string | null;
-  steeringInjected: boolean;
+  steeredKeys: Set<string>; // keys that received a steering message
 }
 
 export interface ToolCallEvent {
@@ -37,8 +36,6 @@ export const DEFAULT_THRESHOLDS: Record<string, number> = {
 export const STATE_MODIFYING_TOOLS = new Set([
   "write",
   "edit",
-  "bash",
-  "ctx_shell",
 ]);
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -47,8 +44,7 @@ export function createFreshTurnState(): TurnState {
   return {
     callHistory: new Map(),
     blockedCount: 0,
-    lastStateModifyingTool: null,
-    steeringInjected: false,
+    steeredKeys: new Set(),
   };
 }
 
@@ -116,8 +112,6 @@ export function applyStateReset(
 ): void {
   if (!STATE_MODIFYING_TOOLS.has(event.toolName)) return;
 
-  turnState.lastStateModifyingTool = event.toolName;
-
   if (event.toolName === "write" || event.toolName === "edit") {
     const path = (event.input as Record<string, unknown>)?.path as
       | string
@@ -146,20 +140,32 @@ export function recordCall(
 
 /**
  * Evaluate a pending tool call against the config and turn state.
- * Returns { block, reason, nudge } or undefined if no action needed.
+ * - At threshold - 1: steer (inject message, don't block)
+ * - At threshold (if key was steered): block
  */
 export function evaluateCall(
   config: LoopGuardConfig,
   turnState: TurnState,
   event: ToolCallEvent,
-): { block: true; reason: string } | undefined {
+): { block: true; reason: string } | { steer: true; toolName: string; args: string; count: number } | undefined {
   if (config.disabled) return;
 
   const key = callKey(event.toolName, event.input);
   const count = turnState.callHistory.get(key) || 0;
   const threshold = config.thresholds[event.toolName] ?? config.thresholds.default;
 
-  if (count >= threshold) {
+  // Steer at threshold - 1: warn the model before blocking
+  if (count === threshold - 1 && !turnState.steeredKeys.has(key)) {
+    return {
+      steer: true,
+      toolName: event.toolName,
+      args: JSON.stringify(event.input),
+      count: count + 1, // this call will bring it to threshold
+    };
+  }
+
+  // Block at threshold only if we already steered this key
+  if (count >= threshold && turnState.steeredKeys.has(key)) {
     return {
       block: true,
       reason: `${event.toolName} called ${count + 1} times with identical args this turn. ` +

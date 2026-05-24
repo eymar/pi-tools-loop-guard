@@ -63,6 +63,30 @@ export default function (pi: ExtensionAPI) {
     // Evaluate BEFORE recording (check existing count)
     const result = evaluateCall(config, turnState, toolEvent);
 
+    // Steer: inject a specific message so the LLM self-corrects before we block
+    if (result?.steer) {
+      const key = callKey(event.toolName, event.input);
+      turnState.steeredKeys.add(key);
+
+      const argsSummary = typeof event.input === "object" && event.input
+        ? JSON.stringify(event.input).slice(0, 120)
+        : String(event.input).slice(0, 120);
+
+      pi.sendMessage({
+        customType: "loopguard-steering",
+        content: `LoopGuard: ${result.toolName} called ${result.count} times with identical args (${argsSummary}). ` +
+          `The result from the first call is still in your context. Do not call ${result.toolName} with these args again — ` +
+          `the next call will be blocked. Use the prior result instead.`,
+        display: true,
+      });
+
+      // Still record the call — the model chose to proceed
+      recordCall(turnState, toolEvent);
+      applyStateReset(turnState, toolEvent);
+      updateFooter(ctx);
+      return;
+    }
+
     // Block (don't record, don't count)
     if (result?.block) {
       turnState.blockedCount++;
@@ -72,18 +96,6 @@ export default function (pi: ExtensionAPI) {
         "warn",
       );
       updateFooter(ctx);
-
-      // After first block, inject a steering message so the LLM stops retrying.
-      if (!turnState.steeringInjected) {
-        turnState.steeringInjected = true;
-        pi.sendMessage({
-          customType: "loopguard-steering",
-          content: `Important: LoopGuard has blocked repeated tool calls. ` +
-            `Do NOT retry the same tool with the same arguments — it will be blocked again. ` +
-            `Use the results you already have from prior calls, or try a different approach.`,
-          display: true,
-        });
-      }
 
       return {
         block: true,
