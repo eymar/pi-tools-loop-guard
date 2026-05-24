@@ -140,8 +140,8 @@ export function recordCall(
 
 /**
  * Evaluate a pending tool call against the config and turn state.
- * - At threshold - 1: steer (inject message, don't block)
- * - At threshold (if key was steered): block
+ * - At threshold + 1: steer (inject message, don't block)
+ * - At > threshold + 1 (if key was steered): block
  */
 export function evaluateCall(
   config: LoopGuardConfig,
@@ -151,24 +151,24 @@ export function evaluateCall(
   if (config.disabled) return;
 
   const key = callKey(event.toolName, event.input);
-  const count = turnState.callHistory.get(key) || 0;
+  const count = (turnState.callHistory.get(key) || 0) + 1;
   const threshold = config.thresholds[event.toolName] ?? config.thresholds.default;
 
-  // Steer at threshold: warn the model before blocking
-  if (count === threshold && !turnState.steeredKeys.has(key)) {
+  // Steer at threshold + 1: warn the model before blocking
+  if (count === threshold + 1 && !turnState.steeredKeys.has(key)) {
     return {
       steer: true,
       toolName: event.toolName,
       args: JSON.stringify(event.input),
-      count: count + 1, // this call brings it to threshold + 1
+      count: count,
     };
   }
 
   // Block only if we already steered this key
-  if (count > threshold && turnState.steeredKeys.has(key)) {
+  if (count > threshold + 1 && turnState.steeredKeys.has(key)) {
     return {
       block: true,
-      reason: `${event.toolName} called ${count + 1} times with identical args this turn. ` +
+      reason: `${event.toolName} called ${count} times with identical args this turn. ` +
         `Prior result is in context. Use it instead of re-calling.`,
     };
   }

@@ -60,7 +60,7 @@ export default function (pi: ExtensionAPI) {
 
     const toolEvent = { toolName: event.toolName, input: event.input };
 
-    // Evaluate BEFORE recording (check existing count)
+    // Evaluate BEFORE recording (evaluateCall includes +1 for the current call)
     const result = evaluateCall(config, turnState, toolEvent);
 
     // Steer: inject a specific message so the LLM self-corrects before we block
@@ -76,11 +76,11 @@ export default function (pi: ExtensionAPI) {
         customType: "loopguard-steering",
         content: `LoopGuard: ${result.toolName} called ${result.count} times with identical args (${argsSummary}). ` +
           `The result from the first call is still in your context. Do not call ${result.toolName} with these args again — ` +
-          `the next call will be blocked. Use the prior result instead.`,
+          `the next call in this turn will be blocked. Use the prior result instead.`,
         display: true,
       });
 
-      // Still record the call — the model chose to proceed
+      // Still record — the call was allowed, model chose to proceed
       recordCall(turnState, toolEvent);
       applyStateReset(turnState, toolEvent);
       updateFooter(ctx);
@@ -103,7 +103,7 @@ export default function (pi: ExtensionAPI) {
       };
     }
 
-    // No action needed — record the call normally
+    // No action — record the call normally
     recordCall(turnState, toolEvent);
     applyStateReset(turnState, toolEvent);
     updateFooter(ctx);
