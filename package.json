@@ -22,7 +22,7 @@
 
   "pi": {
     "extensions": [
-      "./extensions"
+      "./extensions/loop-guard.ts"
     ]
   },
   "devDependencies": {
