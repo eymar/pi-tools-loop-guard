@@ -26,6 +26,7 @@ export const DEFAULT_THRESHOLDS: Record<string, number> = {
   fetch_content: 2,
   web_search: 2,
   code_search: 2,
+  edit: 2,
   read: 3,
   ctx_read: 3,
   ctx_grep: 3,
@@ -72,15 +73,39 @@ const VOLATILE_KEYS = new Set([
 ]);
 
 /**
+ * Normalize `edit` tool args for loop detection.
+ * Strips `newText` from each edit so that retries with different replacement text
+ * but the same target (`oldText`) are detected as repeats.
+ */
+function normalizeEditArgs(args: Record<string, unknown>): Record<string, unknown> {
+  const normalized = { ...args };
+  const edits = args.edits as
+    | { oldText?: string; newText?: string }[]
+    | undefined;
+  if (Array.isArray(edits)) {
+    normalized.edits = edits.map((e) => ({ oldText: e.oldText }));
+  }
+  return normalized;
+}
+
+/**
  * Derive a deterministic key for a tool call.
  * Sorted keys ensure `read({path:"a"})` === `read({path:"a"})` regardless of arg order.
  * Volatile metadata fields (timeout, toolCallId, etc.) are stripped.
+ * For `edit` tool, `newText` is also stripped so retries with different replacement
+ * text but the same target (`oldText`) are detected as repeats.
  */
 export function callKey(toolName: string, input: unknown): string {
   if (!input || typeof input !== "object") {
     return `${toolName}::${JSON.stringify(input)}`;
   }
-  const args = input as Record<string, unknown>;
+  let args = input as Record<string, unknown>;
+
+  // For edit tool, strip newText so only path + oldText matter for loop detection
+  if (toolName === "edit") {
+    args = normalizeEditArgs(args);
+  }
+
   const sortedKeys = Object.keys(args)
     .filter((k) => !VOLATILE_KEYS.has(k))
     .sort();

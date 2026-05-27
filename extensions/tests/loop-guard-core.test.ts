@@ -68,6 +68,131 @@ describe("callKey", () => {
     const b = { path: "file.ts", timeout: 20 };
     expect(callKey("read", a)).toBe(callKey("read", b));
   });
+
+  // ── edit tool: newText is stripped from key ─────────────────────────────
+
+  it("edit: same path + oldText but different newText → same key", () => {
+    const a = {
+      path: "/src/GameState.kt",
+      edits: [{ oldText: "val x: Int = 1", newText: "val x: Int = 2" }],
+    };
+    const b = {
+      path: "/src/GameState.kt",
+      edits: [{ oldText: "val x: Int = 1", newText: "val x: Int = 99" }],
+    };
+    expect(callKey("edit", a)).toBe(callKey("edit", b));
+  });
+
+  it("edit: different oldText → different key", () => {
+    const a = {
+      path: "/src/GameState.kt",
+      edits: [{ oldText: "val x: Int = 1", newText: "val x: Int = 2" }],
+    };
+    const b = {
+      path: "/src/GameState.kt",
+      edits: [{ oldText: "val y: Int = 3", newText: "val y: Int = 4" }],
+    };
+    expect(callKey("edit", a)).not.toBe(callKey("edit", b));
+  });
+
+  it("edit: different path → different key", () => {
+    const a = {
+      path: "/src/A.kt",
+      edits: [{ oldText: "foo", newText: "bar" }],
+    };
+    const b = {
+      path: "/src/B.kt",
+      edits: [{ oldText: "foo", newText: "baz" }],
+    };
+    expect(callKey("edit", a)).not.toBe(callKey("edit", b));
+  });
+
+  it("edit: multiple edits — same oldTexts, different newTexts → same key", () => {
+    const a = {
+      path: "/src/App.ts",
+      edits: [
+        { oldText: "const a = 1", newText: "const a = 10" },
+        { oldText: "const b = 2", newText: "const b = 20" },
+      ],
+    };
+    const b = {
+      path: "/src/App.ts",
+      edits: [
+        { oldText: "const a = 1", newText: "const a = 100" },
+        { oldText: "const b = 2", newText: "const b = 200" },
+      ],
+    };
+    expect(callKey("edit", a)).toBe(callKey("edit", b));
+  });
+
+  it("edit: key only contains path and oldText", () => {
+    const input = {
+      path: "/src/App.ts",
+      edits: [{ oldText: "foo", newText: "bar" }],
+    };
+    const key = callKey("edit", input);
+    expect(key).toBe('edit::{"edits":[{"oldText":"foo"}],"path":"/src/App.ts"}');
+    expect(key).not.toContain("newText");
+    expect(key).not.toContain("bar");
+  });
+});
+
+// ── edit tool loop detection workflow ──────────────────────────────────────
+
+describe("edit tool loop detection", () => {
+  it("steers then blocks edit with same oldText but different newText", () => {
+    const config = createDefaultConfig();
+    const state = createFreshTurnState();
+
+    const edit1: ToolCallEvent = {
+      toolName: "edit",
+      input: {
+        path: "/src/App.ts",
+        edits: [{ oldText: "foo", newText: "bar" }],
+      },
+    };
+    const edit2: ToolCallEvent = {
+      toolName: "edit",
+      input: {
+        path: "/src/App.ts",
+        edits: [{ oldText: "foo", newText: "baz" }],
+      },
+    };
+    const edit3: ToolCallEvent = {
+      toolName: "edit",
+      input: {
+        path: "/src/App.ts",
+        edits: [{ oldText: "foo", newText: "qux" }],
+      },
+    };
+    const edit4: ToolCallEvent = {
+      toolName: "edit",
+      input: {
+        path: "/src/App.ts",
+        edits: [{ oldText: "foo", newText: "final" }],
+      },
+    };
+
+    // Call 1: no action (edit threshold = 2)
+    expect(evaluateCall(config, state, edit1)).toBeUndefined();
+    recordCall(state, edit1);
+
+    // Call 2: no action (count = 1, threshold = 2)
+    expect(evaluateCall(config, state, edit2)).toBeUndefined();
+    recordCall(state, edit2);
+
+    // Call 3: steer at threshold + 1
+    const steer = evaluateCall(config, state, edit3);
+    expect(steer?.steer).toBe(true);
+    expect(steer?.toolName).toBe("edit");
+    state.steeredKeys.add(callKey("edit", edit3.input));
+    recordCall(state, edit3);
+
+    // Call 4: block
+    const block = evaluateCall(config, state, edit4);
+    expect(block?.block).toBe(true);
+    expect(block?.reason).toContain("edit");
+  });
 });
 
 // ── recordCall ────────────────────────────────────────────────────────────────
@@ -386,6 +511,7 @@ describe("DEFAULT_THRESHOLDS", () => {
   it("has expected defaults", () => {
     expect(DEFAULT_THRESHOLDS.fetch_content).toBe(2);
     expect(DEFAULT_THRESHOLDS.web_search).toBe(2);
+    expect(DEFAULT_THRESHOLDS.edit).toBe(2);
     expect(DEFAULT_THRESHOLDS.read).toBe(3);
     expect(DEFAULT_THRESHOLDS.bash).toBe(5);
     expect(DEFAULT_THRESHOLDS.default).toBe(3);
